@@ -1,0 +1,10 @@
+/build/
+/cmake-build-*/
+/out/
+/.vs/
+*.obj
+*.res
+*.exp
+*.lib
+*.dll
+
