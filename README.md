@@ -1,5 +1,3 @@
-Random Set Piece
-
 Random Set Piece adds a Horadric Cube recipe to D2RLoader:
 
 ~~~text
