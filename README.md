@@ -92,6 +92,7 @@ compiler include path.
   the button is pressed. The PluginSDK has no public sound-playback service.
 - The source item's item level and identified state are carried to the output.
 - Socketed inputs are not consumed; transaction failure restores all inputs.
+- The new set item does not trigger Chronicle Discovery
 - Some SetItems rows may be rejected by the runtime item service. The plugin
   retries other eligible rows after an `Unsupported` result, preserving the
   atomic rollback behavior if every candidate is rejected.
