@@ -3,8 +3,7 @@ Random Set Piece
 Random Set Piece adds a Horadric Cube recipe to D2RLoader:
 
 ~~~text
-1 set item + optional ingredient X + optional ingredient Y
-    -> 1 different item from the same set
+1 set item + optional ingredient X + optional ingredient Y -> 1 different item from the same set
 ~~~
 
 ## Compatibility
