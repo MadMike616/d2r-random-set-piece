@@ -1,14 +1,14 @@
 [recipe]
 # D2 item codes. Defaults are El and Eld runes; set either value to another
-# 3- or 4-character item code to change the recipe.
+# 3- or 4-character item code to change the recipe. Either field may be "" to
+# omit that ingredient; set both to "" for a free reroll.
 input_x = "r01"
 input_y = "r02"
-# Chance that a valid recipe consumes both configured ingredients but keeps
-# the original set item. Use an integer from 0 (never) to 100 (always).
+# Chance that a valid recipe consumes any configured ingredients but keeps the
+# original set item. Use an integer from 0 (never) to 100 (always).
 failure_chance_percent = 0
 
 [tables]
 # Blank uses <active mod directory>/data/global/excel. Set this to the folder
 # containing sets.txt and setitems.txt if the active mod keeps them elsewhere.
 table_directory = ""
-
