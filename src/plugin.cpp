@@ -42,12 +42,15 @@ struct Configuration {
     std::uint32_t inputX{};
     std::uint32_t inputY{};
     std::uint32_t failureChancePercent{};
+    bool useInputX{true};
+    bool useInputY{true};
     std::string tableDirectory;
 };
 
 struct PendingExchange {
     D2RL::PlayerHandle player{D2RL::InvalidPlayerHandle};
     std::array<D2RL::Items::TransactionInput, 3> inputs{};
+    std::uint32_t inputCount{};
     std::uint32_t sourceRowId{};
     std::uint32_t itemLevel{};
     std::uint32_t stateFlags{};
@@ -64,7 +67,7 @@ constexpr D2RL::PluginInfo Info{
     .apiVersion = D2RL_PLUGIN_API_VERSION,
     .id = PluginId,
     .name = "Random Set Piece",
-    .version = "0.4.2",
+    .version = "0.4.3",
     .author = "Community",
     .description = "Transforms a set item into another random item from the same set in the Horadric Cube.",
     .flags = D2RL::PluginFlags::Client,
@@ -217,12 +220,19 @@ auto ReadConfiguration() -> bool {
     std::string inputX;
     std::string inputY;
     if (!FindTomlString(text, "input_x", inputX)
-            || !FindTomlString(text, "input_y", inputY)
-            || !ParseItemCode(inputX, Config.inputX)
-            || !ParseItemCode(inputY, Config.inputY)) {
-        Context->LogError("RandomSetPiece: recipe.input_x and recipe.input_y must be quoted 3- or 4-character item codes.");
+            || !FindTomlString(text, "input_y", inputY)) {
+        Context->LogError("RandomSetPiece: recipe.input_x and recipe.input_y must be quoted strings.");
         return false;
     }
+    const bool inputXEmpty = Trim(inputX).empty();
+    const bool inputYEmpty = Trim(inputY).empty();
+    if ((!inputXEmpty && !ParseItemCode(inputX, Config.inputX))
+            || (!inputYEmpty && !ParseItemCode(inputY, Config.inputY))) {
+        Context->LogError("RandomSetPiece: each recipe.input_x/input_y must be empty or a quoted 3- or 4-character item code.");
+        return false;
+    }
+    Config.useInputX = !inputXEmpty;
+    Config.useInputY = !inputYEmpty;
     bool hasFailureChance{};
     if (!FindTomlUnsigned(text, "failure_chance_percent",
                 Config.failureChancePercent, hasFailureChance)
@@ -443,7 +453,10 @@ auto __cdecl CollectCubeItem(const D2RL::PluginContext*, const D2RL::Items::Item
 
 auto FindMatchingExchange(D2RL::PlayerHandle player, CubeCollector& cube,
         PendingExchange& exchange) -> bool {
-    if (cube.overflow || cube.count != 3) return false;
+    const std::size_t configuredIngredientCount =
+        static_cast<std::size_t>(Config.useInputX) + static_cast<std::size_t>(Config.useInputY);
+    const std::size_t expectedCount = 1 + configuredIngredientCount;
+    if (cube.overflow || cube.count != expectedCount) return false;
     const D2RL::Items::ItemInfo* setItem{};
     std::array<const D2RL::Items::ItemInfo*, 2> ingredients{};
     std::size_t ingredientCount{};
@@ -456,19 +469,30 @@ auto FindMatchingExchange(D2RL::PlayerHandle player, CubeCollector& cube,
             ingredients[ingredientCount++] = &item;
         }
     }
-    if (setItem == nullptr || ingredientCount != 2 || setItem->qualityRecordId < 0) return false;
+    const std::size_t expectedIngredientCount = configuredIngredientCount;
+    if (setItem == nullptr || ingredientCount != expectedIngredientCount
+            || setItem->qualityRecordId < 0) return false;
     const auto member = MembersByRow.find(static_cast<std::uint32_t>(setItem->qualityRecordId));
     if (member == MembersByRow.end() || member->second.itemCode != setItem->code) return false;
     const auto targets = MembersBySet.find(member->second.setName);
     if (targets == MembersBySet.end()) return false;
 
-    const std::uint32_t firstCode = ingredients[0]->code;
-    const std::uint32_t secondCode = ingredients[1]->code;
-    const bool ingredientsMatch = Config.inputX == Config.inputY
-        ? firstCode == Config.inputX && secondCode == Config.inputY
-        : ((firstCode == Config.inputX && secondCode == Config.inputY)
-            || (firstCode == Config.inputY && secondCode == Config.inputX));
-    if (!ingredientsMatch) return false;
+    std::array<std::uint32_t, 2> requiredCodes{};
+    std::size_t requiredCount{};
+    if (Config.useInputX) requiredCodes[requiredCount++] = Config.inputX;
+    if (Config.useInputY) requiredCodes[requiredCount++] = Config.inputY;
+    std::array<bool, 2> matchedIngredients{};
+    for (std::size_t required = 0; required < requiredCount; ++required) {
+        bool found{};
+        for (std::size_t actual = 0; actual < ingredientCount; ++actual) {
+            if (!matchedIngredients[actual] && ingredients[actual]->code == requiredCodes[required]) {
+                matchedIngredients[actual] = true;
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
 
     exchange = {};
     exchange.player = player;
@@ -477,10 +501,11 @@ auto FindMatchingExchange(D2RL::PlayerHandle player, CubeCollector& cube,
     exchange.stateFlags = setItem->stateFlags & D2RL::Items::ItemStateIdentified;
     exchange.inputs[0] = {setItem->handle, 1,
         D2RL::Items::SocketedItemPolicy::RejectIfNotEmpty};
-    exchange.inputs[1] = {ingredients[0]->handle, 1,
-        D2RL::Items::SocketedItemPolicy::RejectIfNotEmpty};
-    exchange.inputs[2] = {ingredients[1]->handle, 1,
-        D2RL::Items::SocketedItemPolicy::RejectIfNotEmpty};
+    exchange.inputCount = 1;
+    for (std::size_t i = 0; i < ingredientCount; ++i) {
+        exchange.inputs[exchange.inputCount++] = {ingredients[i]->handle, 1,
+            D2RL::Items::SocketedItemPolicy::RejectIfNotEmpty};
+    }
     exchange.possibleOutputs.reserve(targets->second.size());
     for (const auto& target : targets->second) {
         // Exclude every row using the source base code, not only the exact
@@ -494,11 +519,12 @@ auto FindMatchingExchange(D2RL::PlayerHandle player, CubeCollector& cube,
 
 auto ConsumeFailedRecipeIngredients(const D2RL::PluginContext* context,
         const PendingExchange& exchange) noexcept -> D2RL::Items::Result {
+    if (exchange.inputCount <= 1) return D2RL::Items::Result::Success;
     D2RL::Items::Transaction transaction{
         .structSize = D2RL::Items::TransactionSize,
         .flags = 0,
         .player = exchange.player,
-        .inputCount = 2,
+        .inputCount = exchange.inputCount - 1,
         .outputCount = 0,
         .inputs = exchange.inputs.data() + 1,
         .outputs = nullptr,
@@ -566,7 +592,9 @@ void __cdecl ExecuteExchange(const D2RL::PluginContext* context, void*) noexcept
         if (failureStatus == D2RL::Items::Result::Success) {
             char failureMessage[224]{};
             (void)std::snprintf(failureMessage, sizeof(failureMessage),
-                "RandomSetPiece: failure roll %u/%u hit; configured ingredients were consumed and the set item was preserved.",
+                (Config.useInputX || Config.useInputY)
+                    ? "RandomSetPiece: failure roll %u/%u hit; configured ingredients were consumed and the set item was preserved."
+                    : "RandomSetPiece: failure roll %u/%u hit; this free recipe has no ingredients to consume, so the set item was preserved.",
                 failureRoll, Config.failureChancePercent);
             Context->LogInfo(failureMessage);
         } else {
@@ -623,7 +651,7 @@ void __cdecl ExecuteExchange(const D2RL::PluginContext* context, void*) noexcept
             .structSize = D2RL::Items::TransactionSize,
             .flags = 0,
             .player = exchange.player,
-            .inputCount = static_cast<std::uint32_t>(exchange.inputs.size()),
+            .inputCount = exchange.inputCount,
             .outputCount = 1,
             .inputs = exchange.inputs.data(),
             .outputs = &output,
@@ -703,7 +731,7 @@ auto __cdecl OnUiMessage(const D2RL::PluginContext* context,
         PendingExchange candidate;
         if (!FindMatchingExchange(player, cube, candidate)) {
             if (!FirstRecipeMismatchLogged.exchange(true, std::memory_order_acq_rel)) {
-                Context->LogInfo("RandomSetPiece: Convert did not match; recipe needs exactly one enabled set item and the configured X/Y items.");
+                Context->LogInfo("RandomSetPiece: Convert did not match; the Cube must contain one enabled set item and exactly the configured X/Y ingredients.");
             }
             return D2RL::SharedEvents::UiMessageAction::Continue;
         }
@@ -803,11 +831,11 @@ auto Initialize(const D2RL::PluginContext* context) -> bool {
     }
     Active.store(true, std::memory_order_release);
     if (MembersByRow.empty()) {
-        context->LogWarn("RandomSetPiece 0.4.2 loaded, but no set table members are available yet.");
+        context->LogWarn("RandomSetPiece 0.4.3 loaded, but no set table members are available yet.");
     } else {
         char readyMessage[160]{};
         (void)std::snprintf(readyMessage, sizeof(readyMessage),
-            "RandomSetPiece 0.4.2 is ready; recipe failure chance=%u%%.",
+            "RandomSetPiece 0.4.3 is ready; recipe failure chance=%u%%.",
             Config.failureChancePercent);
         context->LogInfo(readyMessage);
     }
@@ -862,4 +890,3 @@ D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
     Shutdown();
     Context = nullptr;
 }
-
