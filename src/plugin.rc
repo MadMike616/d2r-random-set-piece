@@ -1,0 +1,28 @@
+#include <D2RLPlugin/resource.h>
+#include <D2RLPlugin/version.h>
+
+D2RL_PLUGIN_MANIFEST_RESOURCE_ID RCDATA { D2RL_PLUGIN_RESOURCE_DWORD(D2RL_PLUGIN_API_VERSION) }
+
+1 VERSIONINFO
+FILEVERSION 0,4,2,0
+PRODUCTVERSION 0,4,2,0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "Community"
+      VALUE "FileDescription", "Transforms a set item into another random piece from the same set using the Horadric Cube."
+      VALUE "FileVersion", "0.4.2"
+      VALUE "InternalName", "random-set-piece"
+      VALUE "OriginalFilename", "d2rl-random-set-piece.dll"
+      VALUE "ProductName", "Random Set Piece"
+      VALUE "ProductVersion", "0.4.2"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0409, 1200
+  END
+END
+
