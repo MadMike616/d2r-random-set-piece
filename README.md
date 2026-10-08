@@ -3,7 +3,7 @@
 This D2RLoader client plugin adds a Horadric Cube recipe:
 
 ```text
-1 set item + configured X + configured Y -> 1 random different item from the same set
+1 set item + optional configured X + optional configured Y -> 1 random different item from the same set
 ```
 
 ## Compatibility
@@ -12,11 +12,11 @@ Tested locally with Diablo II: Resurrected 3.3.93847 and D2RLoader plugin ABI 4.
 
 The plugin reads each set item's row, base item code, and set membership from
 `setitems.txt`, then verifies the referenced set names against `sets.txt`.
-When the Cube's native **Convert** action is pressed with exactly three items
-present, the plugin only consumes the click if one item is a set item and the
-other two match the configured input codes. It chooses uniformly among the
+When the Cube's native **Convert** action is pressed with the exact recipe
+contents present, the plugin only consumes the click if one item is a set item
+and any configured ingredients match. It chooses uniformly among the
 other enabled rows in that set whose base item code differs from the source.
-The transaction consumes all three inputs and creates
+The transaction consumes the set item and any configured ingredients, and creates
 the exact selected set row in the Cube as one atomic operation. An item with
 socketed contents is rejected safely; the transaction rolls back instead of
 destroying socket contents.
@@ -24,7 +24,8 @@ If the runtime rejects a randomly selected set row as unsupported, the plugin
 tries the remaining eligible rows in random order. If none can be created, the
 transaction is rolled back and the inputs remain untouched.
 The recipe can also fail at a configurable percentage: a failed roll consumes
-the configured ingredients and preserves the original set item.
+the configured ingredients and preserves the original set item. With no
+ingredients configured, a failed roll simply leaves the set item unchanged.
 
 ## Configuration
 
@@ -41,10 +42,15 @@ failure_chance_percent = 0
 table_directory = ""
 ```
 
-`input_x` and `input_y` are 3- or 4-character D2 item codes. They may be the
-same code, in which case two copies are required. `failure_chance_percent` is
+`input_x` and `input_y` are optional 3- or 4-character D2 item codes. Either
+may be blank to omit that ingredient. For example, `input_x = ""` with
+`input_y = "r02"` requires one set item and one Eld rune. Set both to empty
+strings (`input_x = ""` and `input_y = ""`) to require only one set item and
+no extra inputs. The same code in both fields requires two copies.
+`failure_chance_percent` is
 an integer from 0 to 100 (default 0, disabled); on a failed roll the plugin
-consumes both configured ingredients while preserving the set item.
+consumes any configured ingredients while preserving the set item. With no
+ingredients configured, a failed roll leaves the item unchanged.
 `table_directory` can point
 to a directory containing both `sets.txt` and `setitems.txt`; when blank, the
 plugin looks under the active mod directory at `data/global/excel` and a few
@@ -78,7 +84,8 @@ compiler include path.
 
 - The plugin uses the cube's `HoradricCubePanelMessage:Convert` event and the
   D2RLoader inventory, item-transaction, and game-thread services.
-- Exactly three items must be in the Cube for the custom recipe to match.
+- The Cube must contain exactly one set item plus the number of ingredients
+  configured: one, two, or three total items.
 - The source set item must have another enabled row in the same set.
 - The active mod's `horadriccubelayouthd.json` can set the Convert button's
   `sound` field to `cursor_convert_item` to play D2R's cube Convert sound when
@@ -90,4 +97,3 @@ compiler include path.
   atomic rollback behavior if every candidate is rejected.
 - This version does not modify character save files or edit the game's
   `cubemain.txt`.
-
