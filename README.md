@@ -1,38 +1,31 @@
-# Random Set Piece
+Random Set Piece
 
-This D2RLoader client plugin adds a Horadric Cube recipe:
+Random Set Piece adds a Horadric Cube recipe to D2RLoader:
 
-```text
-1 set item + optional configured X + optional configured Y -> 1 random different item from the same set
-```
+~~~text
+1 set item + optional ingredient X + optional ingredient Y
+    -> 1 different item from the same set
+~~~
 
 ## Compatibility
 
 Tested locally with Diablo II: Resurrected 3.3.93847 and D2RLoader plugin ABI 4.
 
-The plugin reads each set item's row, base item code, and set membership from
-`setitems.txt`, then verifies the referenced set names against `sets.txt`.
-When the Cube's native **Convert** action is pressed with the exact recipe
-contents present, the plugin only consumes the click if one item is a set item
-and any configured ingredients match. It chooses uniformly among the
-other enabled rows in that set whose base item code differs from the source.
-The transaction consumes the set item and any configured ingredients, and creates
-the exact selected set row in the Cube as one atomic operation. An item with
-socketed contents is rejected safely; the transaction rolls back instead of
-destroying socket contents.
-If the runtime rejects a randomly selected set row as unsupported, the plugin
-tries the remaining eligible rows in random order. If none can be created, the
-transaction is rolled back and the inputs remain untouched.
-The recipe can also fail at a configurable percentage: a failed roll consumes
-the configured ingredients and preserves the original set item. With no
-ingredients configured, a failed roll simply leaves the set item unchanged.
+## Recipe behavior
+
+The plugin reads set membership and item codes from `setitems.txt`, then checks the set names against `sets.txt`. It handles the Cube's native **Convert** action when the Cube contains exactly the configured recipe.
+
+The output is chosen uniformly from the other enabled rows in the same set, excluding rows with the source item's base code. The plugin creates the selected set row and consumes the inputs as one atomic transaction. It carries over the source item's item level and identified state.
+
+If the source item has sockets, or the runtime rejects every eligible output, the transaction rolls back and leaves the inputs untouched. When a candidate is rejected as unsupported, the plugin tries the remaining candidates in random order.
+
+You can configure a chance for the recipe to fail. A failed roll consumes any configured ingredients but keeps the original set item. If no ingredients are configured, the item remains unchanged on failure.
 
 ## Configuration
 
-D2RLoader creates `d2rloader/config/random-set-piece.toml` on first load. The
-defaults use El (`r01`) and Eld (`r02`) runes as X and Y:
+On first load, D2RLoader creates `d2rloader/config/random-set-piece.toml`. The defaults use El (`r01`) and Eld (`r02`) runes:
 
-```toml
+~~~toml
 [recipe]
 input_x = "r01"
 input_y = "r02"
@@ -40,61 +33,34 @@ failure_chance_percent = 0
 
 [tables]
 table_directory = ""
-```
+~~~
 
-`input_x` and `input_y` are optional 3- or 4-character D2 item codes. Either
-may be blank to omit that ingredient. For example, `input_x = ""` with
-`input_y = "r02"` requires one set item and one Eld rune. Set both to empty
-strings (`input_x = ""` and `input_y = ""`) to require only one set item and
-no extra inputs. The same code in both fields requires two copies.
-`failure_chance_percent` is
-an integer from 0 to 100 (default 0, disabled); on a failed roll the plugin
-consumes any configured ingredients while preserving the set item. With no
-ingredients configured, a failed roll leaves the item unchanged.
-`table_directory` can point
-to a directory containing both `sets.txt` and `setitems.txt`; when blank, the
-plugin looks under the active mod directory at `data/global/excel` and a few
-loader-provided mod roots. These table files need to be available as loose
-files. If the mod only keeps them inside a packed MPQ, unpack those two files
-to a directory and set `table_directory` to that directory.
+`input_x` and `input_y` accept optional 3- or 4-character D2 item codes. Blank either field to omit that ingredient; blank both to require only the set item. For example, `input_x = ""` and `input_y = "r02"` requires one set item and one Eld rune. Using the same code in both fields requires two copies.
+
+`failure_chance_percent` is an integer from 0 to 100. The default, 0, disables recipe failure.
+
+`table_directory` can point to a folder containing both `sets.txt` and `setitems.txt`. When blank, the plugin searches the active mod's `data/global/excel` folder and several loader-provided mod roots. The tables must be available as loose files. If they're only in a packed MPQ, unpack both files and set `table_directory` to their folder.
 
 ## Build
 
-Requires Windows x64, CMake 3.29+, Visual Studio 2022+ with the Windows SDK,
-and D2RLoader PluginSDK ABI 4. To build offline, pass a local PluginSDK checkout
-with `RANDOM_SET_PIECE_LOCAL_SDK_DIR`:
+Building requires Windows x64, CMake 3.29 or newer, Visual Studio 2022 or newer with the Windows SDK, and D2RLoader PluginSDK ABI 4.
 
-```powershell
+To build offline, provide a local PluginSDK checkout with `RANDOM_SET_PIECE_LOCAL_SDK_DIR`:
+
+~~~powershell
 cmake -S . -B ..\random-set-piece-build -A x64 `
   -DRANDOM_SET_PIECE_LOCAL_SDK_DIR="<PluginSDK checkout>"
 cmake --build ..\random-set-piece-build --config Release --target random_set_piece
-```
+~~~
 
-The output is `../random-set-piece-build/Release/d2rl-random-set-piece.dll`.
-Install it under the active mod's `d2rloader/plugins/` directory.
+The DLL is created at `../random-set-piece-build/Release/d2rl-random-set-piece.dll`. Install it in the active mod's `d2rloader/plugins/` directory.
 
-If the Visual Studio CMake generator fails with a duplicate `PATH`/`Path`
-environment key when MSBuild starts, use an x64 Visual Studio developer shell
-and invoke `cl.exe`, `rc.exe`, and `link.exe` directly. Calling `VsDevCmd.bat`
-alone does not fix the MSBuild error; direct compilation bypasses it. Keep the
-generated `default_config.hpp` from CMake's `generated` directory in the
-compiler include path.
+If the Visual Studio CMake generator fails because MSBuild sees duplicate `PATH` and `Path` environment keys, use an x64 Visual Studio developer shell and invoke `cl.exe`, `rc.exe`, and `link.exe` directly. Running `VsDevCmd.bat` alone does not resolve the MSBuild error. Keep CMake's generated `default_config.hpp` directory in the compiler include path.
 
 ## Runtime notes
 
-- The plugin uses the cube's `HoradricCubePanelMessage:Convert` event and the
-  D2RLoader inventory, item-transaction, and game-thread services.
-- The Cube must contain exactly one set item plus the number of ingredients
-  configured: one, two, or three total items.
-- The source set item must have another enabled row in the same set.
-- The active mod's `horadriccubelayouthd.json` can set the Convert button's
-  `sound` field to `cursor_convert_item` to play D2R's cube Convert sound when
-  the button is pressed. The PluginSDK has no public sound-playback service.
-- The source item's item level and identified state are carried to the output.
-- Socketed inputs are not consumed; transaction failure restores all inputs.
-- The new set item does not trigger Chronicle Discovery
-- Some SetItems rows may be rejected by the runtime item service. The plugin
-  retries other eligible rows after an `Unsupported` result, preserving the
-  atomic rollback behavior if every candidate is rejected.
-- This version does not modify character save files or edit the game's
-  `cubemain.txt`.
+- The plugin uses the Cube's `HoradricCubePanelMessage:Convert` event and D2RLoader's inventory, item transaction, and game-thread services.
+- The Cube must contain exactly one set item plus the configured ingredients.
+- Set `sound = "cursor_convert_item"` in the active mod's `horadriccubelayouthd.json` to play the game's Convert sound. The PluginSDK does not provide a public sound playback service.
+- Creating the output does not trigger Chronicle Discovery.
+- The plugin does not modify character save files or the game's `cubemain.txt`.
