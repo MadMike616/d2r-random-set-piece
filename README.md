@@ -1,7 +1,10 @@
-## Random Set Piece adds a Horadric Cube recipe to D2RLoader:
+# Random Set Piece
+
+Random Set Piece adds a Horadric Cube recipe to D2RLoader:
 
 ~~~text
-1 set item + optional ingredient X + optional ingredient Y -> 1 different item from the same set
+1 set item + optional ingredient X + optional ingredient Y
+    -> 1 different item from the same set
 ~~~
 
 ## Compatibility
@@ -27,6 +30,7 @@ On first load, D2RLoader creates `d2rloader/config/random-set-piece.toml`. The d
 input_x = "r01"
 input_y = "r02"
 failure_chance_percent = 0
+require_identified_set_item = false
 
 [tables]
 table_directory = ""
@@ -35,6 +39,8 @@ table_directory = ""
 `input_x` and `input_y` accept optional 3- or 4-character D2 item codes. Blank either field to omit that ingredient; blank both to require only the set item. For example, `input_x = ""` and `input_y = "r02"` requires one set item and one Eld rune. Using the same code in both fields requires two copies.
 
 `failure_chance_percent` is an integer from 0 to 100. The default, 0, disables recipe failure.
+
+`require_identified_set_item` defaults to `false`. Set it to `true` to require the set item to be identified before the recipe can match. An unidentified set item is left untouched, and the configured ingredients are not consumed.
 
 `table_directory` can point to a folder containing both `sets.txt` and `setitems.txt`. When blank, the plugin searches the active mod's `data/global/excel` folder and several loader-provided mod roots. The tables must be available as loose files. If they're only in a packed MPQ, unpack both files and set `table_directory` to their folder.
 
@@ -61,3 +67,5 @@ If the Visual Studio CMake generator fails because MSBuild sees duplicate `PATH`
 - Set `sound = "cursor_convert_item"` in the active mod's `horadriccubelayouthd.json` to play the game's Convert sound. The PluginSDK does not provide a public sound playback service.
 - Creating the output does not trigger Chronicle Discovery.
 - The plugin does not modify character save files or the game's `cubemain.txt`.
+
+

@@ -44,6 +44,7 @@ struct Configuration {
     std::uint32_t failureChancePercent{};
     bool useInputX{true};
     bool useInputY{true};
+    bool requireIdentifiedSetItem{};
     std::string tableDirectory;
 };
 
@@ -67,7 +68,7 @@ constexpr D2RL::PluginInfo Info{
     .apiVersion = D2RL_PLUGIN_API_VERSION,
     .id = PluginId,
     .name = "Random Set Piece",
-    .version = "0.4.3",
+    .version = "0.4.4",
     .author = "Community",
     .description = "Transforms a set item into another random item from the same set in the Horadric Cube.",
     .flags = D2RL::PluginFlags::Client,
@@ -185,6 +186,34 @@ auto FindTomlUnsigned(std::string_view config, std::string_view key,
     return true;
 }
 
+auto FindTomlBoolean(std::string_view config, std::string_view key,
+        bool& output, bool& found) -> bool {
+    found = false;
+    std::size_t start{};
+    while (start < config.size()) {
+        const std::size_t end = config.find('\n', start);
+        const std::string_view line = Trim(StripComment(config.substr(start,
+            end == std::string_view::npos ? config.size() - start : end - start)));
+        const std::size_t equals = line.find('=');
+        if (equals != std::string_view::npos && Trim(line.substr(0, equals)) == key) {
+            found = true;
+            const std::string_view value = Trim(line.substr(equals + 1));
+            if (value == "true") {
+                output = true;
+                return true;
+            }
+            if (value == "false") {
+                output = false;
+                return true;
+            }
+            return false;
+        }
+        if (end == std::string_view::npos) break;
+        start = end + 1;
+    }
+    return true;
+}
+
 auto ParseItemCode(std::string_view value, std::uint32_t& code) -> bool {
     value = Trim(value);
     if (value.size() != 3 && value.size() != 4) return false;
@@ -244,6 +273,16 @@ auto ReadConfiguration() -> bool {
         // Existing configs created before this setting was added use the
         // default (zero) unless the user adds the key explicitly.
         Config.failureChancePercent = 0;
+    }
+    bool hasRequireIdentifiedSetItem{};
+    if (!FindTomlBoolean(text, "require_identified_set_item",
+                Config.requireIdentifiedSetItem, hasRequireIdentifiedSetItem)) {
+        Context->LogError("RandomSetPiece: recipe.require_identified_set_item must be true or false.");
+        return false;
+    }
+    if (!hasRequireIdentifiedSetItem) {
+        // Preserve behavior for configs created before this option existed.
+        Config.requireIdentifiedSetItem = false;
     }
     if (!FindTomlString(text, "table_directory", Config.tableDirectory)) {
         Context->LogError("RandomSetPiece: tables.table_directory must be a quoted string.");
@@ -472,6 +511,8 @@ auto FindMatchingExchange(D2RL::PlayerHandle player, CubeCollector& cube,
     const std::size_t expectedIngredientCount = configuredIngredientCount;
     if (setItem == nullptr || ingredientCount != expectedIngredientCount
             || setItem->qualityRecordId < 0) return false;
+    if (Config.requireIdentifiedSetItem
+            && (setItem->stateFlags & D2RL::Items::ItemStateIdentified) == 0) return false;
     const auto member = MembersByRow.find(static_cast<std::uint32_t>(setItem->qualityRecordId));
     if (member == MembersByRow.end() || member->second.itemCode != setItem->code) return false;
     const auto targets = MembersBySet.find(member->second.setName);
@@ -831,11 +872,11 @@ auto Initialize(const D2RL::PluginContext* context) -> bool {
     }
     Active.store(true, std::memory_order_release);
     if (MembersByRow.empty()) {
-        context->LogWarn("RandomSetPiece 0.4.3 loaded, but no set table members are available yet.");
+        context->LogWarn("RandomSetPiece 0.4.4 loaded, but no set table members are available yet.");
     } else {
         char readyMessage[160]{};
         (void)std::snprintf(readyMessage, sizeof(readyMessage),
-            "RandomSetPiece 0.4.3 is ready; recipe failure chance=%u%%.",
+            "RandomSetPiece 0.4.4 is ready; recipe failure chance=%u%%.",
             Config.failureChancePercent);
         context->LogInfo(readyMessage);
     }
@@ -890,3 +931,4 @@ D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
     Shutdown();
     Context = nullptr;
 }
+
