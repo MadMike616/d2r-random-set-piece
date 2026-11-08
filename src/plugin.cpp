@@ -65,20 +65,20 @@ struct PendingRequest {
 
 constexpr D2RL::PluginInfo Info{
     .infoSize = D2RL::PluginInfoSize,
-    .apiVersion = D2RL_PLUGIN_API_VERSION,
+    .abiVersion = D2RL_PLUGIN_ABI_VERSION,
     .id = PluginId,
     .name = "Random Set Piece",
-    .version = "0.4.4",
-    .author = "Community",
+    .version = "0.4.5",
+    .author = "MadMike",
     .description = "Transforms a set item into another random item from the same set in the Horadric Cube.",
     .flags = D2RL::PluginFlags::Client,
 };
 
 const D2RL::PluginContext* Context{};
-const D2RL::InventoryServiceV1* InventoryService{};
-const D2RL::ItemServiceV1* ItemService{};
-const D2RL::ThreadServiceV1* ThreadService{};
-const D2RL::SharedEventServiceV1* EventService{};
+const D2RL::InventoryService* InventoryService{};
+const D2RL::ItemService* ItemService{};
+const D2RL::ThreadService* ThreadService{};
+const D2RL::SharedEventService* EventService{};
 D2RL::SharedEvents::ListenerHandle MessageHandle{D2RL::SharedEvents::InvalidHandle};
 Configuration Config;
 std::unordered_map<std::uint32_t, SetMember> MembersByRow;
@@ -801,39 +801,35 @@ auto __cdecl OnUiMessage(const D2RL::PluginContext* context,
 auto Initialize(const D2RL::PluginContext* context) -> bool {
     if (!ReadConfiguration()) return false;
 
-    if (context->QueryService(D2RL::ServiceId::Inventory,
-            D2RL::InventoryServiceV1Version, &InventoryService)
+    if (context->QueryService(&InventoryService)
             != D2RL::ServiceQueryResult::Success
             || InventoryService == nullptr
-            || InventoryService->serviceSize < D2RL::InventoryServiceV1RequiredSize
+            || InventoryService->serviceSize < D2RL::InventoryServiceRequiredSize
             || InventoryService->getLocalPlayer == nullptr
             || InventoryService->forEachInventoryItem == nullptr) {
         context->LogError("RandomSetPiece: D2RLoader InventoryService v1 is required.");
         return false;
     }
-    if (context->QueryService(D2RL::ServiceId::Item,
-            D2RL::ItemServiceV1Version, &ItemService)
+    if (context->QueryService(&ItemService)
             != D2RL::ServiceQueryResult::Success
             || ItemService == nullptr
-            || ItemService->serviceSize < D2RL::ItemServiceV1RequiredSize
+            || ItemService->serviceSize < D2RL::ItemServiceRequiredSize
             || ItemService->executeTransaction == nullptr) {
         context->LogError("RandomSetPiece: D2RLoader ItemService v1 transaction support is required.");
         return false;
     }
-    if (context->QueryService(D2RL::ServiceId::Thread,
-            D2RL::ThreadServiceV1Version, &ThreadService)
+    if (context->QueryService(&ThreadService)
             != D2RL::ServiceQueryResult::Success
             || ThreadService == nullptr
-            || ThreadService->serviceSize < D2RL::ThreadServiceV1RequiredSize
+            || ThreadService->serviceSize < D2RL::ThreadServiceRequiredSize
             || ThreadService->runOnGameThread == nullptr) {
         context->LogError("RandomSetPiece: D2RLoader game-thread service is required.");
         return false;
     }
-    if (context->QueryService(D2RL::ServiceId::SharedEvent,
-            D2RL::SharedEventServiceV1Version, &EventService)
+    if (context->QueryService(&EventService)
             != D2RL::ServiceQueryResult::Success
             || EventService == nullptr
-            || EventService->serviceSize < D2RL::SharedEventServiceV1RequiredSize
+            || EventService->serviceSize < D2RL::SharedEventServiceRequiredSize
             || EventService->registerUiMessageListener == nullptr
             || EventService->unregisterUiMessageListener == nullptr) {
         context->LogError("RandomSetPiece: D2RLoader shared UI-message service is required.");
@@ -872,11 +868,11 @@ auto Initialize(const D2RL::PluginContext* context) -> bool {
     }
     Active.store(true, std::memory_order_release);
     if (MembersByRow.empty()) {
-        context->LogWarn("RandomSetPiece 0.4.4 loaded, but no set table members are available yet.");
+        context->LogWarn("RandomSetPiece 0.4.5 loaded, but no set table members are available yet.");
     } else {
         char readyMessage[160]{};
         (void)std::snprintf(readyMessage, sizeof(readyMessage),
-            "RandomSetPiece 0.4.4 is ready; recipe failure chance=%u%%.",
+            "RandomSetPiece 0.4.5 is ready; recipe failure chance=%u%%.",
             Config.failureChancePercent);
         context->LogInfo(readyMessage);
     }
@@ -911,7 +907,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderGetPluginInfo() noexcept -> const D2RL::PluginI
 
 D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) noexcept -> bool {
     Shutdown();
-    if (!D2RL::HasContext(context) || context->apiVersion != D2RL_PLUGIN_API_VERSION) return false;
+    if (!D2RL::HasContext(context) || context->abiVersion != D2RL_PLUGIN_ABI_VERSION) return false;
     Context = context;
     bool initialized{};
     try {
@@ -931,4 +927,3 @@ D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
     Shutdown();
     Context = nullptr;
 }
-

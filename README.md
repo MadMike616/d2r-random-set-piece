@@ -2,6 +2,8 @@
 
 Random Set Piece adds a Horadric Cube recipe to D2RLoader:
 
+**Author:** MadMike · **Version:** 0.4.5
+
 ~~~text
 1 set item + optional ingredient X + optional ingredient Y
     -> 1 different item from the same set
@@ -9,7 +11,7 @@ Random Set Piece adds a Horadric Cube recipe to D2RLoader:
 
 ## Compatibility
 
-Tested locally with Diablo II: Resurrected 3.3.93847 and D2RLoader plugin ABI 4.
+Tested with Diablo II: Resurrected 3.3.93847. This release uses D2RLoader PluginSDK 0.4.0 and Plugin ABI 4.
 
 ## Recipe behavior
 
@@ -46,7 +48,7 @@ table_directory = ""
 
 ## Build
 
-Building requires Windows x64, CMake 3.29 or newer, Visual Studio 2022 or newer with the Windows SDK, and D2RLoader PluginSDK ABI 4.
+Building requires Windows x64, CMake 3.29 or newer, Visual Studio 2022 or newer with the Windows SDK, and D2RLoader PluginSDK 0.4.0 (Plugin ABI 4).
 
 To build offline, provide a local PluginSDK checkout with `RANDOM_SET_PIECE_LOCAL_SDK_DIR`:
 
@@ -58,8 +60,6 @@ cmake --build ..\random-set-piece-build --config Release --target random_set_pie
 
 The DLL is created at `../random-set-piece-build/Release/d2rl-random-set-piece.dll`. Install it in the active mod's `d2rloader/plugins/` directory.
 
-If the Visual Studio CMake generator fails because MSBuild sees duplicate `PATH` and `Path` environment keys, use an x64 Visual Studio developer shell and invoke `cl.exe`, `rc.exe`, and `link.exe` directly. Running `VsDevCmd.bat` alone does not resolve the MSBuild error. Keep CMake's generated `default_config.hpp` directory in the compiler include path.
-
 ## Runtime notes
 
 - The plugin uses the Cube's `HoradricCubePanelMessage:Convert` event and D2RLoader's inventory, item transaction, and game-thread services.
@@ -68,4 +68,7 @@ If the Visual Studio CMake generator fails because MSBuild sees duplicate `PATH`
 - Creating the output does not trigger Chronicle Discovery.
 - The plugin does not modify character save files or the game's `cubemain.txt`.
 
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
 

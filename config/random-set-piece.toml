@@ -15,4 +15,3 @@ require_identified_set_item = false
 # Blank uses <active mod directory>/data/global/excel. Set this to the folder
 # containing sets.txt and setitems.txt if the active mod keeps them elsewhere.
 table_directory = ""
-
