@@ -9,15 +9,19 @@
 #include <atomic>
 #include <charconv>
 #include <cctype>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <mutex>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -25,9 +29,15 @@
 
 namespace {
 
+namespace fs = std::filesystem;
+
 constexpr char PluginId[] = "random-set-piece";
+constexpr char PluginVersion[] = "1.4.5";
 constexpr char ConvertTarget[] = "HoradricCubePanelMessage";
 constexpr char ConvertCommand[] = "Convert";
+constexpr std::array RequiredTables{L"sets.txt", L"setitems.txt"};
+constexpr auto ExcelPath = L"data/global/excel";
+constexpr auto BaseExcelPath = L"d2rloader/plugins/basefiles-and-backups/basefiles/global/excel";
 constexpr std::size_t MaximumConfigBytes = 16U * 1024U;
 constexpr std::size_t MaximumCubeItems = 12;
 
@@ -68,7 +78,7 @@ constexpr D2RL::PluginInfo Info{
     .abiVersion = D2RL_PLUGIN_ABI_VERSION,
     .id = PluginId,
     .name = "Random Set Piece",
-    .version = "0.4.5",
+    .version = PluginVersion,
     .author = "MadMike",
     .description = "Transforms a set item into another random item from the same set in the Horadric Cube.",
     .flags = D2RL::PluginFlags::Client,
@@ -85,8 +95,6 @@ std::unordered_map<std::uint32_t, SetMember> MembersByRow;
 std::unordered_map<std::string, std::vector<SetMember>> MembersBySet;
 std::atomic<bool> Active{};
 std::atomic<bool> ExchangePending{};
-std::atomic<bool> ConvertMessageLogged{};
-std::atomic<bool> FirstRecipeMismatchLogged{};
 std::mutex PendingMutex;
 PendingRequest Pending;
 std::mt19937 RandomEngine;
@@ -335,7 +343,134 @@ auto ReadTextFile(const std::filesystem::path& path, std::string& text) -> bool 
     return !file.bad();
 }
 
-auto GetTableDirectories() -> std::vector<std::filesystem::path> {
+auto SameWindowsPath(const fs::path& left, const fs::path& right) -> bool {
+    return CompareStringOrdinal(left.c_str(), -1, right.c_str(), -1, TRUE) == CSTR_EQUAL;
+}
+
+auto CheckedModPath(const fs::path& root, const fs::path& relative) -> fs::path {
+    const auto path = root / relative;
+    const auto resolved = fs::weakly_canonical(path);
+    auto part = resolved.begin();
+    for (const auto& rootPart : root) {
+        if (part == resolved.end() || !SameWindowsPath(rootPart, *part)) {
+            throw std::runtime_error("a table installation path points outside the active mod");
+        }
+        ++part;
+    }
+    return path;
+}
+
+struct LooseTableLocation {
+    fs::path modRoot;
+    fs::path excelRelative;
+};
+
+auto GetLooseTableLocation(const D2RL::PluginContext* context) -> LooseTableLocation {
+    if (!D2RL::HasContext(context) || context->activeMod == nullptr) return {};
+    const auto mod = Utf8Path(context->activeMod);
+    if (mod.empty() || mod.has_root_path() || mod.has_parent_path() || mod == L"." || mod == L".."
+            || mod.native().find(L':') != std::wstring::npos) return {};
+
+    const fs::path package = mod.native() + L".mpq";
+    for (const auto* loaderPath : {context->modDirectory, context->scopeRootDirectory}) {
+        if (loaderPath == nullptr) continue;
+        auto root = fs::path(loaderPath).lexically_normal();
+        if (!root.is_absolute()) continue;
+        if (root.filename().empty()) root = root.parent_path();
+        if (SameWindowsPath(root.filename(), package)) root = root.parent_path();
+        for (const auto& candidate : {root, root / mod, root / L"mods" / mod}) {
+            if (!SameWindowsPath(candidate.filename(), mod) || !fs::is_directory(candidate)) continue;
+            const auto canonicalRoot = fs::canonical(candidate);
+            const auto packagePath = CheckedModPath(canonicalRoot, package);
+            const auto packageStatus = fs::symlink_status(packagePath);
+            if (fs::is_directory(packagePath)) return {canonicalRoot, package / ExcelPath};
+            if (packageStatus.type() != fs::file_type::not_found) return {}; // Packed MPQ.
+            if (fs::is_directory(CheckedModPath(canonicalRoot, L"data"))) return {canonicalRoot, ExcelPath};
+        }
+    }
+    return {};
+}
+
+class ModInstallLock {
+public:
+    ModInstallLock() {
+        // Other D2RLoader first-run installers use this exact mutex name.
+        handle_ = CreateMutexW(nullptr, FALSE, L"Local\\D2RLoader.ModFirstRunInstall.v1");
+        if (handle_ == nullptr) {
+            throw std::system_error(GetLastError(), std::system_category(), "opening the shared mod-install lock");
+        }
+        const auto result = WaitForSingleObject(handle_, 60'000);
+        if (result == WAIT_OBJECT_0 || result == WAIT_ABANDONED) return;
+        const auto error = result == WAIT_TIMEOUT ? ERROR_TIMEOUT : GetLastError();
+        CloseHandle(handle_);
+        throw std::system_error(error, std::system_category(), "waiting for the shared mod-install lock");
+    }
+
+    ModInstallLock(const ModInstallLock&) = delete;
+    auto operator=(const ModInstallLock&) -> ModInstallLock& = delete;
+
+    ~ModInstallLock() {
+        ReleaseMutex(handle_);
+        CloseHandle(handle_);
+    }
+
+private:
+    HANDLE handle_{};
+};
+
+auto IsMissing(const fs::path& path) -> bool {
+    // Treat a symlink (even a dangling one) or directory as an occupied destination.
+    return fs::symlink_status(path).type() == fs::file_type::not_found;
+}
+
+auto CopyMissingBaseTables(const LooseTableLocation& location) -> std::size_t {
+    const auto excel = CheckedModPath(location.modRoot, location.excelRelative);
+    if (std::none_of(RequiredTables.begin(), RequiredTables.end(),
+            [&](const wchar_t* name) { return IsMissing(excel / name); })) return 0;
+    const auto baseExcel = CheckedModPath(location.modRoot, BaseExcelPath);
+    if (!fs::is_directory(baseExcel)) return 0;
+
+    const ModInstallLock lock;
+    std::vector<const wchar_t*> missing;
+    for (const auto* name : RequiredTables) {
+        if (IsMissing(excel / name)
+                && fs::is_regular_file(CheckedModPath(location.modRoot, fs::path(BaseExcelPath) / name))) {
+            missing.push_back(name);
+        }
+    }
+    if (missing.empty()) return 0;
+
+    fs::create_directories(excel);
+    const auto staging = excel / (L".random-set-piece-install-" + std::to_wstring(GetCurrentProcessId())
+        + L"-" + std::to_wstring(GetTickCount64()));
+    if (!fs::create_directory(staging)) throw std::runtime_error("could not create a table staging directory");
+    const auto cleanup = [&]() {
+        std::error_code ignored;
+        for (const auto* name : missing) fs::remove(staging / name, ignored);
+        fs::remove(staging, ignored);
+    };
+    std::size_t copied{};
+    try {
+        for (const auto* name : missing) fs::copy_file(baseExcel / name, staging / name);
+        for (const auto* name : missing) {
+            const auto target = excel / name;
+            // Publish a complete copy without replacing a file created by another process.
+            if (!MoveFileExW((staging / name).c_str(), target.c_str(), MOVEFILE_WRITE_THROUGH)) {
+                const auto error = GetLastError();
+                if (error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS) continue;
+                throw std::system_error(error, std::system_category(), "could not add " + target.filename().string());
+            }
+            ++copied;
+        }
+    } catch (...) {
+        cleanup();
+        throw;
+    }
+    cleanup();
+    return copied;
+}
+
+auto GetTableDirectories(const LooseTableLocation& loose) -> std::vector<std::filesystem::path> {
     std::vector<std::filesystem::path> directories;
     if (!Config.tableDirectory.empty()) {
         const std::filesystem::path configured = Utf8Path(Config.tableDirectory);
@@ -348,6 +483,8 @@ auto GetTableDirectories() -> std::vector<std::filesystem::path> {
         }
         return directories;
     }
+
+    if (!loose.modRoot.empty()) return {CheckedModPath(loose.modRoot, loose.excelRelative)};
 
     if (Context != nullptr && Context->modDirectory != nullptr) {
         const std::filesystem::path modRoot(Context->modDirectory);
@@ -376,8 +513,8 @@ auto GetTableDirectories() -> std::vector<std::filesystem::path> {
     return directories;
 }
 
-auto LoadSetMembers() -> bool {
-    for (const auto& directory : GetTableDirectories()) {
+auto LoadSetMembers(const LooseTableLocation& loose) -> bool {
+    for (const auto& directory : GetTableDirectories(loose)) {
         std::string setText;
         std::string setItemText;
         if (!ReadTextFile(directory / L"sets.txt", setText)
@@ -619,30 +756,19 @@ void __cdecl ExecuteExchange(const D2RL::PluginContext* context, void*) noexcept
         return;
     }
 
-    std::uint32_t failureRoll{};
-    if (Config.failureChancePercent != 0) {
-        failureRoll = std::uniform_int_distribution<std::uint32_t>(1, 100)(RandomEngine);
-        char rollMessage[128]{};
-        (void)std::snprintf(rollMessage, sizeof(rollMessage),
-            "RandomSetPiece: failure roll=%u/100, configured chance=%u%%.",
-            failureRoll, Config.failureChancePercent);
-        Context->LogInfo(rollMessage);
-    }
-    if (failureRoll != 0 && failureRoll <= Config.failureChancePercent) {
+    const bool recipeFailed = Config.failureChancePercent != 0
+        && std::uniform_int_distribution<std::uint32_t>(1, 100)(RandomEngine) <= Config.failureChancePercent;
+    if (recipeFailed) {
         const auto failureStatus = ConsumeFailedRecipeIngredients(context, exchange);
         if (failureStatus == D2RL::Items::Result::Success) {
-            char failureMessage[224]{};
-            (void)std::snprintf(failureMessage, sizeof(failureMessage),
-                (Config.useInputX || Config.useInputY)
-                    ? "RandomSetPiece: failure roll %u/%u hit; configured ingredients were consumed and the set item was preserved."
-                    : "RandomSetPiece: failure roll %u/%u hit; this free recipe has no ingredients to consume, so the set item was preserved.",
-                failureRoll, Config.failureChancePercent);
-            Context->LogInfo(failureMessage);
+            Context->LogInfo((Config.useInputX || Config.useInputY)
+                ? "RandomSetPiece: the recipe failed; the ingredients were consumed and the set item was preserved."
+                : "RandomSetPiece: the recipe failed; the set item was preserved.");
         } else {
             char failureMessage[224]{};
             (void)std::snprintf(failureMessage, sizeof(failureMessage),
-                "RandomSetPiece: failure roll %u/%u hit, but ingredient transaction rolled back (ItemService result=%u); no items were changed.",
-                failureRoll, Config.failureChancePercent, static_cast<unsigned>(failureStatus));
+                "RandomSetPiece: the failed recipe's ingredient transaction rolled back (ItemService result=%u); no items were changed.",
+                static_cast<unsigned>(failureStatus));
             Context->LogWarn(failureMessage);
         }
         Pending = {};
@@ -660,8 +786,6 @@ void __cdecl ExecuteExchange(const D2RL::PluginContext* context, void*) noexcept
     D2RL::Items::Result status = D2RL::Items::Result::NotFound;
     std::uint32_t rejectedCandidates{};
     std::uint32_t attemptedCandidates{};
-    std::uint32_t completedRow{};
-    std::uint32_t completedCode{};
     for (const SetMember& outputMember : outputCandidates) {
         ++attemptedCandidates;
         D2RL::Items::ItemCreateSpec output{};
@@ -707,25 +831,12 @@ void __cdecl ExecuteExchange(const D2RL::PluginContext* context, void*) noexcept
             .reserved = 0,
         };
         status = ItemService->executeTransaction(context, &transaction, &result);
-        if (status == D2RL::Items::Result::Success) {
-            completedRow = outputMember.rowId;
-            completedCode = outputMember.itemCode;
-            break;
-        }
         if (status != D2RL::Items::Result::Unsupported) break;
         ++rejectedCandidates;
     }
 
     if (status == D2RL::Items::Result::Success) {
-        if (rejectedCandidates == 0) {
-            Context->LogInfo("RandomSetPiece: cube recipe completed; output is another piece of the same set.");
-        } else {
-            char successMessage[192]{};
-            (void)std::snprintf(successMessage, sizeof(successMessage),
-                "RandomSetPiece: cube recipe completed with output row=%u, code=%08X after skipping %u unsupported candidate(s).",
-                completedRow, completedCode, rejectedCandidates);
-            Context->LogInfo(successMessage);
-        }
+        Context->LogInfo("RandomSetPiece: cube recipe completed; output is another piece of the same set.");
     } else {
         char failureMessage[224]{};
         (void)std::snprintf(failureMessage, sizeof(failureMessage),
@@ -750,9 +861,6 @@ auto __cdecl OnUiMessage(const D2RL::PluginContext* context,
     }
 
     try {
-        if (!ConvertMessageLogged.exchange(true, std::memory_order_acq_rel)) {
-            Context->LogInfo("RandomSetPiece: observed the Horadric Cube Convert message.");
-        }
         D2RL::PlayerHandle player{D2RL::InvalidPlayerHandle};
         if (InventoryService->getLocalPlayer(context, &player) != D2RL::Inventory::Result::Success
                 || player == D2RL::InvalidPlayerHandle) {
@@ -771,9 +879,6 @@ auto __cdecl OnUiMessage(const D2RL::PluginContext* context,
         }
         PendingExchange candidate;
         if (!FindMatchingExchange(player, cube, candidate)) {
-            if (!FirstRecipeMismatchLogged.exchange(true, std::memory_order_acq_rel)) {
-                Context->LogInfo("RandomSetPiece: Convert did not match; the Cube must contain one enabled set item and exactly the configured X/Y ingredients.");
-            }
             return D2RL::SharedEvents::UiMessageAction::Continue;
         }
         if (ExchangePending.exchange(true, std::memory_order_acq_rel)) {
@@ -835,13 +940,21 @@ auto Initialize(const D2RL::PluginContext* context) -> bool {
         context->LogError("RandomSetPiece: D2RLoader shared UI-message service is required.");
         return false;
     }
-    if (!LoadSetMembers()) {
-        context->LogWarn("RandomSetPiece: sets.txt and setitems.txt were not found or could not be parsed; the recipe will stay inactive.");
-    } else {
-        const std::string loadedMessage = "RandomSetPiece: loaded "
-            + std::to_string(MembersByRow.size()) + " enabled set-piece rows across "
-            + std::to_string(MembersBySet.size()) + " sets.";
-        context->LogInfo(loadedMessage.c_str());
+    try {
+        const auto loose = Config.tableDirectory.empty() ? GetLooseTableLocation(context) : LooseTableLocation{};
+        if (!loose.modRoot.empty() && CopyMissingBaseTables(loose) != 0) {
+            context->LogInfo("RandomSetPiece: copied missing set tables from basefiles. Exit and restart D2RLoader with the same mod to load them.");
+            return true;
+        }
+        if (!LoadSetMembers(loose)) {
+            context->LogWarn("RandomSetPiece: could not load sets.txt and setitems.txt; the recipe is disabled. Check table_directory or supply the missing originals in d2rloader/plugins/basefiles-and-backups/basefiles/global/excel.");
+            return true;
+        }
+    } catch (const std::exception& error) {
+        const std::string message = "RandomSetPiece: could not prepare the set tables; the recipe is disabled: "
+            + std::string(error.what());
+        context->LogWarn(message.c_str());
+        return true;
     }
 
     std::uint64_t seed = GetTickCount64() ^ (static_cast<std::uint64_t>(GetCurrentProcessId()) << 32U);
@@ -867,15 +980,11 @@ auto Initialize(const D2RL::PluginContext* context) -> bool {
         return false;
     }
     Active.store(true, std::memory_order_release);
-    if (MembersByRow.empty()) {
-        context->LogWarn("RandomSetPiece 0.4.5 loaded, but no set table members are available yet.");
-    } else {
-        char readyMessage[160]{};
-        (void)std::snprintf(readyMessage, sizeof(readyMessage),
-            "RandomSetPiece 0.4.5 is ready; recipe failure chance=%u%%.",
-            Config.failureChancePercent);
-        context->LogInfo(readyMessage);
-    }
+    char readyMessage[160]{};
+    (void)std::snprintf(readyMessage, sizeof(readyMessage),
+        "RandomSetPiece %s is ready; recipe failure chance=%u%%.",
+        PluginVersion, Config.failureChancePercent);
+    context->LogInfo(readyMessage);
     return true;
 }
 

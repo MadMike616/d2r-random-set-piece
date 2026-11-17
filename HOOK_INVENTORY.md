@@ -6,10 +6,10 @@
 |---|---|
 | Plugin name | Random Set Piece |
 | Plugin ID | random-set-piece |
-| Release version | 0.4.5 |
-| Inventory updated | 2026-11-08 |
-| Source revision | v0.4.5 release tag |
-| D2R build(s) audited | 3.3.93847 (runtime retest after SDK migration pending) |
+| Release version | Unreleased |
+| Inventory updated | 2026-11-17 |
+| Source revision | 1.4.5 source update based on v0.4.5 |
+| D2R build(s) audited | Not validated in game for 1.4.5 |
 | D2RLoader SDK / Plugin ABI | PluginSDK 0.4.0 / Plugin ABI 4 |
 | Audit status | Complete |
 
@@ -33,4 +33,4 @@ None identified in the current inventory; this is not a compatibility guarantee.
 
 ## Audit notes
 
-No native hook-site changes from v0.4.4. This release migrates the SDK ABI field names and manifest constant, updates version/author metadata, and uses optimized Release build flags. Runtime behavior has not been retested in-game after the SDK migration.
+No native hook-site changes from v0.4.5. The new file setup uses a Windows mutex to coordinate with other installers; it does not install an OS hook.

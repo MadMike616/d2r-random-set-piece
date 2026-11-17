@@ -12,6 +12,7 @@ failure_chance_percent = 0
 require_identified_set_item = false
 
 [tables]
-# Blank uses <active mod directory>/data/global/excel. Set this to the folder
-# containing sets.txt and setitems.txt if the active mod keeps them elsewhere.
+# Blank uses the active mod's loose data/global/excel folder and can copy missing
+# tables from d2rloader/plugins/basefiles-and-backups/basefiles/global/excel.
+# Set a folder here to read sets.txt and setitems.txt there without auto-copying.
 table_directory = ""

@@ -2,7 +2,7 @@
 
 Random Set Piece adds a Horadric Cube recipe to D2RLoader:
 
-**Author:** MadMike · **Version:** 0.4.5
+**Author:** MadMike · **Source version:** 1.4.5
 
 ~~~text
 1 set item + optional ingredient X + optional ingredient Y
@@ -11,7 +11,15 @@ Random Set Piece adds a Horadric Cube recipe to D2RLoader:
 
 ## Compatibility
 
-Tested with Diablo II: Resurrected 3.3.93847. This release uses D2RLoader PluginSDK 0.4.0 and Plugin ABI 4.
+Uses D2RLoader PluginSDK 0.4.0 and Plugin ABI 4. Earlier versions were tested with Diablo II: Resurrected 3.3.93847.
+
+## Installation and game tables
+
+The automatic table setup below is available in the 1.4.5 source build. See [GitHub Releases](https://github.com/MadMike616/d2r-random-set-piece/releases) for published binaries.
+
+Place `d2rl-random-set-piece.dll` in the active mod's `d2rloader/plugins/` folder. The plugin needs `sets.txt` and `setitems.txt`. With the default configuration, it reads the unpacked mod's loose `data/global/excel/` folder first, including the folder inside `<ModName>.mpq/` when the `.mpq` is an unpacked directory.
+
+If either table is missing, use **Ladik's Casc Viewer** to extract the original from the game data version used by your mod. Place it in `mods/<ModName>/d2rloader/plugins/basefiles-and-backups/basefiles/global/excel/`. On startup, the plugin copies any missing tables it finds there into the unpacked mod's loose data folder. The copy uses the shared mod-install lock. It preserves all existing loose files, so there is nothing to back up. If the plugin adds a table, fully exit and restart D2RLoader with the same mod to load it. The recipe stays disabled until both tables can be read.
 
 ## Recipe behavior
 
@@ -44,7 +52,7 @@ table_directory = ""
 
 `require_identified_set_item` defaults to `false`. Set it to `true` to require the set item to be identified before the recipe can match. An unidentified set item is left untouched, and the configured ingredients are not consumed.
 
-`table_directory` can point to a folder containing both `sets.txt` and `setitems.txt`. When blank, the plugin searches the active mod's `data/global/excel` folder and several loader-provided mod roots. The tables must be available as loose files. If they're only in a packed MPQ, unpack both files and set `table_directory` to their folder.
+`table_directory` can point to a folder containing both loose tables. A nonblank value is a read-only override and skips automatic copying. If your mod uses a packed MPQ archive, unpack the same tables the mod uses into a separate folder and set `table_directory` to that folder.
 
 ## Build
 
