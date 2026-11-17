@@ -6,9 +6,9 @@
 |---|---|
 | Plugin name | Random Set Piece |
 | Plugin ID | random-set-piece |
-| Release version | Unreleased |
+| Release version | 1.4.5 |
 | Inventory updated | 2026-11-17 |
-| Source revision | 1.4.5 source update based on v0.4.5 |
+| Source revision | v1.4.5 release tag |
 | D2R build(s) audited | Not validated in game for 1.4.5 |
 | D2RLoader SDK / Plugin ABI | PluginSDK 0.4.0 / Plugin ABI 4 |
 | Audit status | Complete |

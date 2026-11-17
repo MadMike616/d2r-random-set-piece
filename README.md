@@ -2,7 +2,7 @@
 
 Random Set Piece adds a Horadric Cube recipe to D2RLoader:
 
-**Author:** MadMike · **Source version:** 1.4.5
+**Author:** MadMike · **Version:** 1.4.5
 
 ~~~text
 1 set item + optional ingredient X + optional ingredient Y
@@ -15,7 +15,7 @@ Uses D2RLoader PluginSDK 0.4.0 and Plugin ABI 4. Earlier versions were tested wi
 
 ## Installation and game tables
 
-The automatic table setup below is available in the 1.4.5 source build. See [GitHub Releases](https://github.com/MadMike616/d2r-random-set-piece/releases) for published binaries.
+Download the DLL from [GitHub Releases](https://github.com/MadMike616/d2r-random-set-piece/releases).
 
 Place `d2rl-random-set-piece.dll` in the active mod's `d2rloader/plugins/` folder. The plugin needs `sets.txt` and `setitems.txt`. With the default configuration, it reads the unpacked mod's loose `data/global/excel/` folder first, including the folder inside `<ModName>.mpq/` when the `.mpq` is an unpacked directory.
 
