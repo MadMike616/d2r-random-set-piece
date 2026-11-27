@@ -1,3 +1,4 @@
+#include "install_token.hpp"
 #include <D2RLPlugin/api.h>
 
 #include "default_config.hpp"
@@ -32,7 +33,7 @@ namespace {
 namespace fs = std::filesystem;
 
 constexpr char PluginId[] = "random-set-piece";
-constexpr char PluginVersion[] = "1.4.5";
+constexpr char PluginVersion[] = "1.4.6";
 constexpr char ConvertTarget[] = "HoradricCubePanelMessage";
 constexpr char ConvertCommand[] = "Convert";
 constexpr std::array RequiredTables{L"sets.txt", L"setitems.txt"};
@@ -425,12 +426,17 @@ auto IsMissing(const fs::path& path) -> bool {
 
 auto CopyMissingBaseTables(const LooseTableLocation& location) -> std::size_t {
     const auto excel = CheckedModPath(location.modRoot, location.excelRelative);
-    if (std::none_of(RequiredTables.begin(), RequiredTables.end(),
-            [&](const wchar_t* name) { return IsMissing(excel / name); })) return 0;
+    const ModInstallLock lock;
+    if (InstallToken::Complete(*Context)) return 0;
+    const auto finish=[&]() {
+        if (std::all_of(RequiredTables.begin(),RequiredTables.end(),
+                [&](const wchar_t* name){return fs::is_regular_file(excel/name);}))
+            InstallToken::Commit(*Context);
+    };
+    if (std::none_of(RequiredTables.begin(),RequiredTables.end(),
+            [&](const wchar_t* name){return IsMissing(excel/name);})) {finish();return 0;}
     const auto baseExcel = CheckedModPath(location.modRoot, BaseExcelPath);
     if (!fs::is_directory(baseExcel)) return 0;
-
-    const ModInstallLock lock;
     std::vector<const wchar_t*> missing;
     for (const auto* name : RequiredTables) {
         if (IsMissing(excel / name)
@@ -467,6 +473,7 @@ auto CopyMissingBaseTables(const LooseTableLocation& location) -> std::size_t {
         throw;
     }
     cleanup();
+    finish();
     return copied;
 }
 

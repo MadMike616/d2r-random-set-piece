@@ -80,3 +80,12 @@ The DLL is created at `../random-set-piece-build/Release/d2rl-random-set-piece.d
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE).
 
+
+
+## Installation completion
+
+After successful first-run setup, the plugin records a completion token in its TOML configuration. Later launches skip that completed setup and preserve existing files and settings. Failed setup remains retryable.
+
+Later launches still read the installed tables for rerolling. A nonblank `table_directory` remains a read-only override.
+
+To rerun setup intentionally, close the game and set `complete = false` in the relevant token section (`[installation]` by default).

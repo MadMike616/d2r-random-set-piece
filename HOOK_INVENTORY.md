@@ -6,9 +6,9 @@
 |---|---|
 | Plugin name | Random Set Piece |
 | Plugin ID | random-set-piece |
-| Release version | 1.4.5 |
-| Inventory updated | 2026-11-17 |
-| Source revision | v1.4.5 release tag |
+| Release version | 1.4.6 |
+| Inventory updated | 2026-11-27 |
+| Source revision | v1.4.6 release source |
 | D2R build(s) audited | Not validated in game for 1.4.5 |
 | D2RLoader SDK / Plugin ABI | PluginSDK 0.4.0 / Plugin ABI 4 |
 | Audit status | Complete |
@@ -34,3 +34,5 @@ None identified in the current inventory; this is not a compatibility guarantee.
 ## Audit notes
 
 No native hook-site changes from v0.4.5. The new file setup uses a Windows mutex to coordinate with other installers; it does not install an OS hook.
+
+Release 1.4.6 source review: TOML installation completion and configuration mirroring add no native hook, patch, vtable, or OS input-hook targets. Hook-site changes since the previous release: none. Startup completion was checked in the testing environment; the existing native validation limits above still apply.

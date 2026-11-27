@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.29)
 
-project(RandomSetPiece VERSION 1.4.5 LANGUAGES CXX RC)
+project(RandomSetPiece VERSION 1.4.6 LANGUAGES CXX RC)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
